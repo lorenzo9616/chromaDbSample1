@@ -1,0 +1,21 @@
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+
+  webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ChromaDb__Url=http://chromadb:8000
+    depends_on:
+      - chromadb
+
+volumes:
+  chroma-data:
