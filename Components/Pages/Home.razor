@@ -1,0 +1,192 @@
+@page "/"
+@using ChromaSampleUI.Services
+@using System.Text.Json
+@inject ChromaService ChromaService
+@rendermode InteractiveServer
+
+<div class="container">
+    <h1>ChromaDB Interactive Sample</h1>
+
+    <div class="intro">
+        <h2>What is ChromaDB?</h2>
+        <p>
+            <strong>ChromaDB</strong> is an open-source vector database designed for AI applications.
+            It stores data as high-dimensional vectors (embeddings) and enables <em>semantic similarity search</em> —
+            meaning you can search by meaning rather than exact keywords.
+        </p>
+        <p>
+            This sample application demonstrates how to integrate ChromaDB with a .NET Blazor web app.
+            You can <strong>seed</strong> predefined documents into the database and then <strong>search</strong>
+            for similar documents using natural language queries. ChromaDB handles the embedding generation
+            and similarity matching behind the scenes.
+        </p>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h3>1. Seed Sample Data</h3>
+        <p>Click the button below to upsert predefined documents about .NET and Vector Databases into ChromaDB.</p>
+        <button class="btn btn-seed" @onclick="SeedData" disabled="@_isSeeding">
+            @(_isSeeding ? "Seeding..." : "Seed Data")
+        </button>
+
+        @if (!string.IsNullOrEmpty(_seedMessage))
+        {
+            <div class="message @(_seedSuccess ? "success" : "error")">
+                @_seedMessage
+            </div>
+        }
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h3>2. Search Documents</h3>
+        <p>Enter a query below to find semantically similar documents in ChromaDB.</p>
+        <div class="search-bar">
+            <input type="text" @bind="_searchQuery" @bind:event="oninput"
+                   @onkeydown="HandleKeyDown"
+                   placeholder="e.g., What is a vector database?" />
+            <button class="btn btn-search" @onclick="Search" disabled="@(_isSearching || string.IsNullOrWhiteSpace(_searchQuery))">
+                @(_isSearching ? "Searching..." : "Search")
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_searchError))
+        {
+            <div class="message error">@_searchError</div>
+        }
+
+        @if (_searchResults is { Count: > 0 })
+        {
+            <div class="results">
+                <h4>Search Results</h4>
+                @foreach (var result in _searchResults)
+                {
+                    <div class="result-card">
+                        <div class="result-document">@result.Document</div>
+                        <div class="result-meta">
+                            <span class="distance">Distance: @result.Distance.ToString("F4")</span>
+                            @foreach (var kvp in result.Metadata)
+                            {
+                                <span class="meta-tag">@kvp.Key: @kvp.Value</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else if (_hasSearched && _searchResults is { Count: 0 })
+        {
+            <div class="message">No results found. Try seeding data first.</div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string CollectionName = "sample_documents";
+
+    private bool _isSeeding;
+    private string _seedMessage = "";
+    private bool _seedSuccess;
+
+    private string _searchQuery = "";
+    private bool _isSearching;
+    private string _searchError = "";
+    private List<QueryResult>? _searchResults;
+    private bool _hasSearched;
+
+    private async Task SeedData()
+    {
+        _isSeeding = true;
+        _seedMessage = "";
+        _seedSuccess = false;
+
+        try
+        {
+            var collectionId = await ChromaService.GetOrCreateCollectionAsync(CollectionName);
+
+            var ids = new List<string>
+            {
+                "doc-1", "doc-2", "doc-3", "doc-4", "doc-5",
+                "doc-6", "doc-7", "doc-8", "doc-9", "doc-10"
+            };
+
+            var documents = new List<string>
+            {
+                ".NET is a free, cross-platform, open-source developer platform for building many different types of applications including web, mobile, desktop, games, and IoT.",
+                "Blazor is a framework for building interactive web UIs using C# instead of JavaScript. It can run client-side in the browser via WebAssembly or server-side in ASP.NET Core.",
+                "A vector database stores data as high-dimensional vectors, enabling similarity search based on the mathematical distance between vectors rather than exact matches.",
+                "ChromaDB is an open-source embedding database designed to make it easy to build AI applications with embeddings. It supports semantic search and filtering.",
+                "Entity Framework Core is a modern object-relational mapper (ORM) for .NET that enables developers to work with databases using .NET objects, eliminating most data-access code.",
+                "Embeddings are numerical representations of data (text, images, audio) in a continuous vector space where similar items are mapped to nearby points.",
+                "ASP.NET Core is a cross-platform, high-performance framework for building modern, cloud-based, Internet-connected applications like web APIs, web apps, and microservices.",
+                "Semantic search understands the intent and contextual meaning of a query rather than just matching keywords, making search results more relevant and accurate.",
+                "Docker enables developers to package applications and their dependencies into lightweight, portable containers that run consistently across different environments.",
+                "LINQ (Language Integrated Query) is a set of technologies in .NET that adds native data querying capabilities directly into the C# language."
+            };
+
+            var metadatas = new List<Dictionary<string, string>>
+            {
+                new() { { "category", ".NET" }, { "topic", "platform" } },
+                new() { { "category", ".NET" }, { "topic", "blazor" } },
+                new() { { "category", "AI" }, { "topic", "vector-database" } },
+                new() { { "category", "AI" }, { "topic", "chromadb" } },
+                new() { { "category", ".NET" }, { "topic", "orm" } },
+                new() { { "category", "AI" }, { "topic", "embeddings" } },
+                new() { { "category", ".NET" }, { "topic", "web-framework" } },
+                new() { { "category", "AI" }, { "topic", "search" } },
+                new() { { "category", "DevOps" }, { "topic", "containers" } },
+                new() { { "category", ".NET" }, { "topic", "linq" } }
+            };
+
+            await ChromaService.UpsertDocumentsAsync(collectionId, ids, documents, metadatas);
+
+            _seedMessage = $"Successfully seeded {documents.Count} documents into the '{CollectionName}' collection!";
+            _seedSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _seedMessage = $"Error seeding data: {ex.Message}";
+            _seedSuccess = false;
+        }
+        finally
+        {
+            _isSeeding = false;
+        }
+    }
+
+    private async Task Search()
+    {
+        if (string.IsNullOrWhiteSpace(_searchQuery)) return;
+
+        _isSearching = true;
+        _searchError = "";
+        _searchResults = null;
+        _hasSearched = false;
+
+        try
+        {
+            var collectionId = await ChromaService.GetOrCreateCollectionAsync(CollectionName);
+            _searchResults = await ChromaService.QueryAsync(collectionId, _searchQuery, nResults: 5);
+            _hasSearched = true;
+        }
+        catch (Exception ex)
+        {
+            _searchError = $"Error searching: {ex.Message}";
+        }
+        finally
+        {
+            _isSearching = false;
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Search();
+        }
+    }
+}
